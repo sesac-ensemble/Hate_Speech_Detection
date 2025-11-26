@@ -106,7 +106,7 @@ Korean_AU/
 - **add_infer_args**  
   추론에만 사용되는 인수를 추가하는 함수입니다.
  
-  
+<img src="images/Figure_1.png" alt="Figure 1" width="400"/>
   
   
   
