@@ -24,6 +24,7 @@ Korean_AU/
 ├── NIKL_AU_2023_COMPETITION_v1.0/        # 데이터셋 폴더
 ├── Jupyter Notebook/                     # 데이터 전처리 Jupyter Notebook
 │   └── preprocessing.ipynb
+├── images							      # Readme.md 이미지 첨부 폴더
 ├── model/                                # 모델 체크포인트 및 결과 파일 폴더
 │   └── results
 └── src/                                  # 소스 코드 폴더
