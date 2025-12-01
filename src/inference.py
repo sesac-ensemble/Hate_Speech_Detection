@@ -1,18 +1,17 @@
 from torch.utils.data import DataLoader
 import pandas as pd
-import argparse
 import torch
 import os
+import argparse
 import numpy as np
 from tqdm import tqdm
 from model import load_model_for_inference
 from data import prepare_dataset
 from arguments import add_common_args, add_infer_args
 
-def inference(model, tokenized_sent, device, batch_size):
-    """
-    학습된(trained) 모델을 통해 결과를 추론하는 function
-    """
+
+def inference(model, tokenized_sent, device, batch_size=32):
+    """학습된(trained) 모델을 통해 결과를 추론하는 function"""
     dataloader = DataLoader(tokenized_sent, batch_size=batch_size, shuffle=False)
     model.eval()
     output_pred = []
@@ -29,24 +28,35 @@ def inference(model, tokenized_sent, device, batch_size):
         output_pred.append(result)
     return (np.concatenate(output_pred).tolist(),)
 
+
 def infer_and_eval(args):
-    """
-    학습된 모델로 추론(infer)한 후에 예측한 결과(pred)를 평가(eval)
-    """
+    """학습된 모델로 추론(infer)한 후에 예측한 결과(pred)를 평가(eval)"""
     # set device
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # set model & tokenizer
-    tokenizer, model = load_model_for_inference(args.model_name, args.model_dir)
+    tokenizer, model = load_model_for_inference(
+        args.model_name, args.model_dir, args.model_revision
+    )
+    # tokenizer, model = load_model_for_inference(model_name,model_dir)
     model.to(device)
 
     # set data
-    _,_, hate_test_dataset, test_dataset = prepare_dataset(
-        args.dataset_dir, tokenizer, args.max_len, args.model_name
+    # _,_, hate_test_dataset, test_dataset = prepare_dataset("./NIKL_AU_2023_COMPETITION_v1.0",tokenizer,256)
+    # Hugging Face Hub에서 test 데이터셋 로드
+    print(f"--- Loading test dataset from Hugging Face Hub: {args.dataset_name} ---")
+    # test_dataset = load_data(args.dataset_name, split="test")
+    # HuggingFace 사용으로 prepare_dataset의 args.dataset_dir -> args.dataset_name
+    _, _, hate_test_dataset, test_dataset = prepare_dataset(
+        args.dataset_name,
+        tokenizer,
+        args.max_len,
+        args.model_name,
+        revision=args.dataset_revision,  # 이 부분 추가
     )
 
     # predict answer
-    pred_answer = inference(model, hate_test_dataset, device, args.batch_size)   # model에서 class 추론
+    pred_answer = inference(model, hate_test_dataset, device)  # model에서 class 추론
     pred = pred_answer[0]
     print("--- Prediction done ---")
 
@@ -60,12 +70,13 @@ def infer_and_eval(args):
     )
 
     # 최종적으로 완성된 예측한 라벨 csv 파일 형태로 저장.
-    result_path = args.result_dir
+    result_path = "./prediction/"
     if not os.path.exists(result_path):
         os.makedirs(result_path)
     output.to_csv(os.path.join(result_path, "result.csv"), index=False)
     print("--- Save result ---")
     return output
+
 
 def parse_args():
     """
@@ -77,7 +88,14 @@ def parse_args():
     args = parser.parse_args()
     return args
 
+
 if __name__ == "__main__":
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
     args = parse_args()
     infer_and_eval(args)
+
+
+# if __name__ == "__main__":
+#     model_name = "klue/bert-base"
+#     model_dir = "./best_model"
+
+#     infer_and_eval(model_name,model_dir)

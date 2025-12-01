@@ -1,3 +1,5 @@
+# model.py
+
 import pytorch_lightning as pl
 import torch
 from utils import compute_metrics
@@ -7,129 +9,118 @@ from transformers import (
     AutoTokenizer,
     AutoConfig,
     AutoModelForSequenceClassification,
+    Trainer,
+    TrainingArguments,
+    EarlyStoppingCallback,
 )
-from transformers import Trainer, TrainingArguments
-from transformers import EarlyStoppingCallback
-from transformers.optimization import get_cosine_with_hard_restarts_schedule_with_warmup
+
+
+class ContiguousTrainer(Trainer):
+    """KcELECTRA 계열 모델의 저장 오류를 해결하기 위한 Custom Trainer"""
+
+    def _save(self, output_dir=None, state_dict=None):
+        for name, param in self.model.named_parameters():
+            if not param.is_contiguous():
+                param.data = param.data.contiguous()
+        super()._save(output_dir, state_dict)
+
 
 def load_tokenizer_and_model_for_train(args):
-    """학습(train)을 위한 사전학습(pretrained) 토크나이저와 모델을 huggingface에서 load"""
-    # load model and tokenizer
-    MODEL_NAME = args.model_name
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    """학습을 위한 토크나이저와 모델 로딩 (수정 없음)"""
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model_name, revision=args.model_revision
+    )
+    new_tokens = [
+        "&name&",
+        "&location&",
+        "&affiliation&",
+        "&company&",
+        "&brand&",
+        "&art&",
+        "&other&",
+        "&nama&",
+        "&affifiation&",
+        "&name",
+        "&online-account&",
+        "&compnay&",
+        "&anme&",
+        "& name&",
+        "&address&",
+        "&tel-num&",
+        "&naem&",
+    ]
+    tokenizer.add_tokens(new_tokens)
 
-    # setting model hyperparameter
-    model_config = AutoConfig.from_pretrained(MODEL_NAME)
+    model_config = AutoConfig.from_pretrained(
+        args.model_name, revision=args.model_revision
+    )
     model_config.num_labels = 2
-    print(model_config)
-
     model = AutoModelForSequenceClassification.from_pretrained(
-        MODEL_NAME, config=model_config
+        args.model_name, config=model_config, revision=args.model_revision
     )
-    print("--- Modeling Done ---")
+    model.resize_token_embeddings(len(tokenizer))
+
+    print("--- Tokenizer and Model for Train Loaded ---")
     return tokenizer, model
 
-def load_model_for_inference(model_name,model_dir):
-    """추론(infer)에 필요한 모델과 토크나이저 load """
-    # load tokenizer
-    Tokenizer_NAME = model_name
-    tokenizer = AutoTokenizer.from_pretrained(Tokenizer_NAME)
 
-    ## load my model
-    model = AutoModelForSequenceClassification.from_pretrained(model_dir)
-
-    return tokenizer, model
-
-def load_trainer_for_train(args, model, hate_train_dataset, hate_valid_dataset):
-    """학습(train)을 위한 huggingface trainer 설정"""
-    training_args = TrainingArguments(
-        output_dir=args.save_path + "/results",  # output directory
-        save_total_limit=args.save_limit,  # number of total save model.
-        save_steps=args.save_step,  # model saving step.
-        num_train_epochs=args.epochs,  # total number of training epochs
-        learning_rate=args.lr,  # learning_rate
-        per_device_train_batch_size=args.batch_size,  # batch size per device during training
-        per_device_eval_batch_size=8,  # batch size for evaluation
-        warmup_steps=args.warmup_steps,  # number of warmup steps for learning rate scheduler
-        weight_decay=args.weight_decay,  # strength of weight decay
-        logging_dir=args.save_path + "logs",  # directory for storing logs
-        logging_steps=args.logging_step,  # log saving step.
-        eval_strategy="steps",  # evaluation strategy to adopt during training
-        # `no`: No evaluation during training.
-        # `steps`: Evaluate every `eval_steps`.
-        # `epoch`: Evaluate every end of epoch.
-        eval_steps=args.eval_step,  # evaluation step.
-        load_best_model_at_end=True,
-        report_to="wandb",  # W&B 로깅 활성화
-        run_name=args.run_name,  # run_name 지정
-    )
-
-    ## Add callback & optimizer & scheduler
-    MyCallback = EarlyStoppingCallback(
-        early_stopping_patience=3, early_stopping_threshold=0.001
-    )
-
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=args.lr,
-        betas=(0.9, 0.999),
-        eps=1e-08,
-        weight_decay=args.weight_decay,
-        amsgrad=False,
-    )
-    print("--- Set training arguments Done ---")
-
-    trainer = Trainer(
-        model=model,  # the instantiated 🤗 Transformers model to be trained
-        args=training_args,  # training arguments, defined above
-        train_dataset=hate_train_dataset,  # training dataset
-        eval_dataset=hate_valid_dataset,  # evaluation dataset
-        compute_metrics=compute_metrics,  # define metrics function
-        callbacks=[MyCallback],
-        optimizers=(
-            optimizer,
-            get_cosine_with_hard_restarts_schedule_with_warmup(
-                optimizer,
-                num_warmup_steps=args.warmup_steps,
-                num_training_steps=len(hate_train_dataset) * args.epochs,
-            ),
-        ),
-    )
-    print("--- Set Trainer Done ---")
-
-    return trainer
-
-def train(args):
-    """모델을 학습(train)하고 best model을 저장"""
-    # fix a seed
-    pl.seed_everything(seed=42, workers=False)
-
-    # set device
-    # device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+# [핵심 수정] K-Fold와 단일 학습 모두를 처리할 수 있도록 hate_train_dataset=None을 기본값으로 설정
+def train(args, hate_train_dataset=None, hate_valid_dataset=None):
+    """모델을 학습하고 best model을 저장"""
+    pl.seed_everything(seed=args.seed, workers=False)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("device:", device)
 
-    # set model and tokenizer
     tokenizer, model = load_tokenizer_and_model_for_train(args)
     model.to(device)
 
-    # set data
-    # hate_train_dataset, hate_valid_dataset, hate_test_dataset, test_dataset = (
-        # prepare_dataset(args.dataset_dir, tokenizer, args.max_len)
-       # hate_test_dataset과 test_dataset 변수가 선언만 되고 실제로는 사용되지 않고 있음
-    # train 함수는 학습과 검증 데이터셋만 필요하므로, 나머지는 _로 받기
-    hate_train_dataset, hate_valid_dataset, _, _ = prepare_dataset(
-        args.dataset_dir, tokenizer, args.max_len, args.model_name
-    )  
-# --- data loading Done ---data tokenizing Done ---pytorch dataset class Done ---
+    # 데이터셋이 인자로 주어지지 않은 경우(단일 학습)에만 data.py를 통해 직접 로드
+    if hate_train_dataset is None or hate_valid_dataset is None:
+        print("--- Loading data for a single run ---")
+        hate_train_dataset, hate_valid_dataset, _, _ = prepare_dataset(
+            args.dataset_name,
+            tokenizer,
+            args.max_len,
+            args.model_name,
+            revision=args.dataset_revision,
+        )
 
-    # set trainer
-    trainer = load_trainer_for_train(
-        args, model, hate_train_dataset, hate_valid_dataset
+    training_args = TrainingArguments(
+        output_dir=args.save_path + "/results",
+        save_total_limit=args.save_limit,
+        save_strategy="steps",
+        save_steps=args.save_step,
+        num_train_epochs=args.epochs,
+        learning_rate=args.lr,
+        per_device_train_batch_size=args.batch_size,
+        per_device_eval_batch_size=args.batch_size * 2,
+        warmup_steps=args.warmup_steps,
+        weight_decay=args.weight_decay,
+        logging_dir=args.save_path + "/logs",
+        logging_strategy="steps",
+        logging_steps=args.logging_step,
+        evaluation_strategy="steps",
+        eval_steps=args.eval_step,
+        load_best_model_at_end=True,
+        metric_for_best_model="f1",
+        greater_is_better=True,
+        report_to="wandb",
+        run_name=args.run_name,
+        fp16=True,
     )
 
-    # train model
-    print("--- Start train ---")
+    MyCallback = EarlyStoppingCallback(
+        early_stopping_patience=10, early_stopping_threshold=0.001
+    )
+
+    trainer = ContiguousTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=hate_train_dataset,
+        eval_dataset=hate_valid_dataset,
+        compute_metrics=compute_metrics,
+        callbacks=[MyCallback],
+    )
+
+    print("--- Training Start ---")
     trainer.train()
-    print("--- Finish train ---")
-    model.save_pretrained(args.model_dir)
+    print("--- Training Finished ---")

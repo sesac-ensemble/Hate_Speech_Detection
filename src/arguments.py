@@ -1,9 +1,24 @@
 import argparse
 
+
 def add_common_args(parser):
     """
     학습과 추론에 공통으로 사용되는 인수를 추가하는 함수
     """
+    parser.add_argument(
+        "--dataset_name",
+        type=str,
+        default="ensemble-2/NIKL_AU_2023_COMPETITION_v1.0",
+        help="Hugging Face 데이터셋 이름 ",
+    )
+    # 데이터셋 버전을 위한 인자 추가
+    parser.add_argument(
+        "--dataset_revision",
+        type=str,
+        default="v1.2",  # 기본값은 최신 버전(None)
+        help="Hugging Face 데이터셋의 특정 revision",
+    )
+
     parser.add_argument(
         "--dataset_dir",
         type=str,
@@ -16,17 +31,21 @@ def add_common_args(parser):
         default="klue/bert-base",
         help="HuggingFace 모델 이름 (예: klue/bert-base)",
     )
+    # 모델 버전을 위한 인자 추가
     parser.add_argument(
-        "--max_len", 
-        type=int, 
-        default=256, 
-        help="입력 시퀀스의 최대 길이"
+        "--model_revision",
+        type=str,
+        default=None,  # "main" -> None
+        help="Hugging Face 모델의 버전(브랜치, 태그, 커밋 해시 등)",
     )
     parser.add_argument(
-        "--batch_size", 
-        type=int, 
-        default=8, 
-        help="배치 사이즈 (메모리에 맞게 조절 16,32)"
+        "--max_len", type=int, default=256, help="입력 시퀀스의 최대 길이"
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=8,
+        help="배치 사이즈 (메모리에 맞게 조절 16,32)",
     )
     parser.add_argument(
         "--model_dir",
@@ -35,6 +54,7 @@ def add_common_args(parser):
         help="학습 시 모델을 저장하고, 추론 시 불러올 모델의 경로",
     )
     return parser
+
 
 def add_train_args(parser):
     """
@@ -47,70 +67,35 @@ def add_train_args(parser):
         help='모델 타입 (예: "bert", "electra")',
     )
     parser.add_argument(
-        "--save_path", 
-        type=str, 
-        default=".././model", 
-        help="모델 저장 경로"
+        "--save_path", type=str, default=".././model", help="모델 저장 경로"
     )
     parser.add_argument(
-        "--save_step", 
-        type=int, 
-        default=200, 
-        help="모델을 저장할 스텝 간격"
+        "--save_step", type=int, default=200, help="모델을 저장할 스텝 간격"
     )
     parser.add_argument(
-        "--logging_step", 
-        type=int, 
-        default=200, 
-        help="로그를 출력할 스텝 간격"
+        "--logging_step", type=int, default=200, help="로그를 출력할 스텝 간격"
     )
     parser.add_argument(
-        "--eval_step", 
-        type=int, 
-        default=200, 
-        help="모델을 평가할 스텝 간격"
+        "--eval_step", type=int, default=200, help="모델을 평가할 스텝 간격"
     )
     parser.add_argument(
-        "--save_limit", 
-        type=int, 
-        default=5, 
-        help="저장할 모델의 최대 개수"
+        "--save_limit", type=int, default=5, help="저장할 모델의 최대 개수"
+    )
+    parser.add_argument("--seed", type=int, default=42, help="랜덤 시드 값")
+    parser.add_argument("--epochs", type=int, default=5, help="에폭 수")
+    parser.add_argument("--lr", type=float, default=3e-5, help="학습률")
+    parser.add_argument(
+        "--weight_decay", type=float, default=0.01, help="가중치 감소(weight decay) 값"
+    )
+    parser.add_argument("--warmup_steps", type=int, default=300, help="워밍업 스텝 수")
+    parser.add_argument(
+        "--scheduler", type=str, default="linear", help="학습률 스케줄러 타입"
     )
     parser.add_argument(
-        "--seed", 
-        type=int, 
-        default=42, 
-        help="랜덤 시드 값"
-    )
-    parser.add_argument(
-        "--epochs", 
-        type=int, 
-        default=5, 
-        help="에폭 수"
-    )
-    parser.add_argument(
-        "--lr", 
-        type=float, 
-        default=3e-5, 
-        help="학습률"
-    )
-    parser.add_argument(
-        "--weight_decay", 
-        type=float, 
-        default=0.01, 
-        help="가중치 감소(weight decay) 값"
-    )
-    parser.add_argument(
-        "--warmup_steps", 
-        type=int, 
-        default=300, 
-        help="워밍업 스텝 수"
-    )
-    parser.add_argument(
-        "--scheduler", 
-        type=str, 
-        default="linear", 
-        help="학습률 스케줄러 타입"
+        "--gradient_accumulation_steps",
+        type=int,
+        default=4,
+        help="그래디언트 누적 스텝 수",
     )
     parser.add_argument(
         "--run_name",
@@ -120,14 +105,15 @@ def add_train_args(parser):
     )
     return parser
 
+
 def add_infer_args(parser):
     """
     추론에만 사용되는 인수를 추가하는 함수
     """
     parser.add_argument(
-        "--result_dir", 
-        type=str, 
-        default=".././prediction", 
-        help="결과 CSV 파일을 저장할 경로"
+        "--result_dir",
+        type=str,
+        default=".././prediction",
+        help="결과 CSV 파일을 저장할 경로",
     )
     return parser
